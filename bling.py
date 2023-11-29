@@ -109,6 +109,9 @@ class Bling:
     def get_all_products(self):
         return self.api_request('produtos')
 
+    def get_product(self, product_id):
+        return self.api_request('produtos/' + str(product_id))
+
     def read_refresh_token_from_file(self):
         if os.path.isfile(self.REFRESH_TOKEN_FILE):
             with open('refresh_token.txt', 'r') as f:
