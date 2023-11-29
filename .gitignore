@@ -5,6 +5,8 @@ secret*
 *.secret
 *.secrets
 
+*.txt
+
 ### C++ ###
 # Prerequisites
 *.d

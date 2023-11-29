@@ -1,4 +1,7 @@
+import os
+import sys
 import uuid
+import signal
 import base64
 import logging
 import requests
@@ -6,13 +9,14 @@ import environs
 
 class Bling:
     API_URL = 'https://bling.com.br/Api/v3/'
+    REFRESH_TOKEN_FILE = 'refresh_token.txt'
 
-    def __init__(self, client_id, client_secret, redirect_uri, loglevel=logging.INFO):
+    def __init__(self, client_id, client_secret, redirect_uri, loglevel=logging.INFO, refresh_token=None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.access_token = None
-        self.refresh_token = None
+        self.refresh_token = refresh_token
   
         self.setup_logger(loglevel)
         self.logger.debug("Bling API client initialized")
@@ -25,22 +29,26 @@ class Bling:
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
 
-    def api_request(self, path, params, method='GET'):
+    def api_request(self, path, params={}, method='GET', headers={}, authorized=True):
+        self.logger.debug("Calling {} with params: {}".format(path, params))
+
+        if authorized and not headers and self.access_token:
+            headers = {'Authorization': 'Bearer ' + self.access_token}
+        elif not headers:
+            self.logger.warning("Attempting to make authorized request without access token")
+
         if method == 'GET':
-            req = requests.get(self.API_URL + path, params=params)
-            # TODO: Handle exceptions and return json?
-            return req
+            try:
+                req = requests.get(self.API_URL + path, params=params, headers=headers)
+                if req:
+                    return req.json()
+                else:
+                    self.logger.error(f'{req.status_code} - {req.text}')
+                    return None
+            except Exception as e:
+                self.logger.error(str(e))
+                return None
         elif method == 'POST':
-            # TODO: check if all POST endpoints actually need authorization
-            # otherwise setup a separate method or specific argument to send
-            # authorized POST requests
-            b64_credentials = base64.b64encode(f'{self.client_id}:{self.client_secret}'.encode('utf-8')).decode('utf-8')
-            headers = {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': '1.0',
-                'Authorization': 'Basic ' + b64_credentials
-            }
-           
             try:
                 req = requests.post(self.API_URL + path, data=params, headers=headers)
 
@@ -54,6 +62,14 @@ class Bling:
                 return None
         else:
             raise ValueError("Invalid method: " + method)
+
+    def gen_basic_auth_header(self):
+        b64_credentials = base64.b64encode(f'{self.client_id}:{self.client_secret}'.encode('utf-8')).decode('utf-8')
+        return {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': '1.0',
+            'Authorization': 'Basic ' + b64_credentials
+        }
 
     def get_auth_url(self):
         state = uuid.uuid4().hex
@@ -82,13 +98,37 @@ class Bling:
             'grant_type': 'authorization_code',
             'code': code
         }
-
-        return self._update_tokens(self.api_request('oauth/token', params=params, method='POST'))
-
-    def get_access_token(self, refresh_token):
-        params = {'grant_type': 'refresh_token', 'refresh_token': refresh_token}
         
-        return self._update_tokens(self.api_request('oauth/token', params=params, method='POST'))
+        return self._update_tokens(self.api_request('oauth/token', params=params, headers=self.gen_basic_auth_header(), method='POST'))
+
+    def get_access_token(self):
+        params = {'grant_type': 'refresh_token', 'refresh_token': self.refresh_token}
+        
+        return self._update_tokens(self.api_request('oauth/token', params=params, headers=self.gen_basic_auth_header(), method='POST'))
+
+    def get_all_products(self):
+        return self.api_request('produtos')
+
+    def read_refresh_token_from_file(self):
+        if os.path.isfile(self.REFRESH_TOKEN_FILE):
+            with open('refresh_token.txt', 'r') as f:
+                self.refresh_token = f.read().strip().lstrip()
+                return True
+
+    def write_refresh_token_to_file(self):
+        with open(self.REFRESH_TOKEN_FILE, 'w') as f:
+            if self.refresh_token:
+                self.logger.debug("Writing tokens to file")
+                f.write(self.refresh_token)
+        return True
+
+    def cleanup(self):
+        self.write_refresh_token_to_file()
+
+# Handle CTRL + C ( cleanup on exit )
+def signal_handler(sig, frame):
+    bling.cleanup()
+    sys.exit(0)
 
 # Testing
 if __name__ == "__main__":
@@ -98,28 +138,38 @@ if __name__ == "__main__":
         bling = Bling(
             env('BLING_CLIENT_ID'),
             env('BLING_CLIENT_SECRET'),
-            env('BLING_REDIRECT_URI')
+            env('BLING_REDIRECT_URI'),
         )
     except environs.EnvError as e:
         print("Missing environment variables: " + str(e))
         exit(1)
 
-    print("Go to the following URL to authorize the app:")
-    print(bling.get_auth_url())
+    signal.signal(signal.SIGINT, signal_handler)
 
-    auth_code = input("\nEnter the code from the redirect URL: ")
-
-    print("\nGetting access token from code...")
-    token = bling.get_access_token_from_code(auth_code)
-    if token:
-        print(f"Access token: {bling.access_token}, Refresh token: {bling.refresh_token}")
+    if len(sys.argv) > 1:
+        bling.refresh_token = sys.argv[1]
+        print("Using refresh token from command line argument: " + bling.refresh_token)
+    elif bling.read_refresh_token_from_file():
+        refresh_token = bling.refresh_token
+        print("Using refresh token from file: " + str(refresh_token))
     else:
-        print("Error getting new tokens")
+        print("No refresh token provided, will attempt to get one from authorization code")
 
-    print("\nGetting access token from refresh token...")
-    token = bling.get_access_token(bling.refresh_token)
+    if bling.refresh_token is None:
+        print("Go to the following URL to authorize the app:")
+        print(bling.get_auth_url())
 
-    if token:
-        print(f"Access token: {bling.access_token}, Refresh token: {bling.refresh_token}")
+        auth_code = input("\nEnter the code from the redirect URL: ")
+
+        print("\nGetting access token from code...")
+        token = bling.get_access_token_from_code(auth_code)
+        if token:
+            print(f"Access token: {bling.access_token}, Refresh token: {bling.refresh_token}")
+        else:
+            print("Error getting new tokens")
     else:
-        print("Error getting new tokens")
+        print("Getting new access token from refresh token")
+        token = bling.get_access_token()
+
+    print(bling.get_all_products())
+    bling.cleanup()
