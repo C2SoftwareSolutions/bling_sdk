@@ -118,11 +118,17 @@ class Bling:
         
         return self._update_tokens(self.api_request('oauth/token', params=params, headers=self.gen_basic_auth_header(), method='POST'))
 
-    def get_all_products(self):
-        return self.api_request('produtos')
+    ## Products
+    # TODO: setup a model/class for product creation
+    def create_product(self, product):
+        return self.api_request('produtos/', params=product, method='POST')
 
     def get_product(self, product_id):
         return self.api_request('produtos/' + str(product_id))
+
+    # TODO: pagination
+    def get_all_products(self):
+        return self.api_request('produtos')
     
     def delete_products(self, product_ids):
         params = {"idsProdutos": product_ids}
@@ -132,8 +138,107 @@ class Bling:
     def delete_product(self, product_id):
         return self.api_request('produtos/' + str(product_id), method='DELETE')
 
-    def create_product(self, product):
-        return self.api_request('produtos/', params=product, method='POST')
+    ## Categories
+    # TODO: setup a model for categories, like { 'descricao': 'Nome', 'categoriaPai': { 'id': 1 } }
+    def create_category(self, category):
+        return self.api_request('categorias/produtos', params=category, method='POST')
+
+    def get_category(self, category_id):
+        return self.api_request('categorias/produtos/' + str(category_id))
+
+    # TODO: pagination
+    def get_all_categories(self):
+        return self.api_request('categorias/produtos')
+
+    def delete_category(self, category_id):
+        return self.api_request('categorias/produtos/' + str(category_id), method='DELETE')
+
+    def update_category(self, category_id, category):
+        return self.api_request('categorias/produtos/' + str(category_id), params=category, method='PUT')
+
+
+    ## Marketplace Categories
+    def get_all_marketplace_categories(self):
+        return self.api_request('categorias/lojas')
+
+    def get_marketplace_category(self, marketplace_id):
+        return self.api_request('categorias/lojas/' + str(marketplace_id))
+
+    def get_linked_categories(self, link_id):
+        return self.api_request('categorias/lojas/' + str(link_id))
+
+    def get_all_linked_categories(self):
+        return self.api_request('categorias/lojas')
+
+    def link_categories(self, product_category_id, marketplace_category_id, marketplace_id):
+        # TODO: receive a model/class for category, should be able to access category.id, etc.
+        params = {
+            "loja": {
+                "id": marketplace_id
+            },
+            "descricao": "Categoria de produto vinculado à loja",  # TODO: make this a parameter?
+            "codigo": marketplace_category_id,
+            "categoriaProduto": {
+                "id": product_category_id
+            }
+        }
+        return self.api_request('categorias/lojas', params=params, method='POST')
+
+    def update_linked_categories(self, link_id, product_category_id, marketplace_category_id, marketplace_id):
+        params = {
+            "loja": {
+                "id": marketplace_id
+            },
+            "descricao": "Categoria de produto vinculado à loja",  # TODO: make this a parameter?
+            "codigo": marketplace_category_id,
+            "categoriaProduto": {
+                "id": product_category_id
+            }
+        }
+        return self.api_request('categorias/lojas/' + str(link_id), params=params, method='PUT')
+    
+    def unlink_categories(self, link_id):
+        return self.api_request('categorias/lojas/' + str(link_id), method='DELETE')
+
+    ## Link products with marketplaces
+    def link_product(self, product_id, marketplace_id):
+        # TODO: params dict is missing fields
+        # TODO: add categoriasProdutos  
+        params = {
+            "codigo": product_id,
+            "produto": {
+                "id": product_id
+            },
+            "loja": {
+                "id": marketplace_id
+            }
+        }
+
+        return self.api_request('produtos/lojas', params=params, method='POST')
+
+    def get_linked_product(self, link_id):
+        return self.api_request('produtos/lojas/' + str(link_id))
+
+    def get_all_linked_products(self):
+        return self.api_request('produtos/lojas')
+
+    def delete_linked_product(self, link_id):
+        return self.api_request('produtos/lojas/' + str(link_id), method='DELETE')
+
+    def update_linked_product(self, link_id, product_id, marketplace_id):
+        # TODO: params dict is missing fields
+        # TODO: add categoriasProdutos  
+        params = {
+            "codigo": product_id,
+            "produto": {
+                "id": product_id
+            },
+            "loja": {
+                "id": marketplace_id
+            }
+        }
+
+        return self.api_request('produtos/lojas/' + str(link_id), params=params, method='PUT')
 
     def read_refresh_token_from_file(self):
         if os.path.isfile(self.REFRESH_TOKEN_FILE):
