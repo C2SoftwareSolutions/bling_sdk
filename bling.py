@@ -60,6 +60,18 @@ class Bling:
             except Exception as e:
                 self.logger.error(str(e))
                 return None
+        elif method == 'DELETE':
+            try:
+                req = requests.post(self.API_URL + path, data=params, headers=headers)
+
+                if req:
+                    return req.json()
+                else:
+                    self.logger.error(f'{req.status_code} - {req.text}')
+                    return None
+            except Exception as e:
+                self.logger.error(str(e))
+                return None
         else:
             raise ValueError("Invalid method: " + method)
 
@@ -111,6 +123,17 @@ class Bling:
 
     def get_product(self, product_id):
         return self.api_request('produtos/' + str(product_id))
+    
+    def delete_products(self, product_ids):
+        params = {"idsProdutos": product_ids}
+        # TODO: Check if this works; could be expecting comma separated string
+        return self.api_request('produtos/', params=params, method='DELETE')
+
+    def delete_product(self, product_id):
+        return self.api_request('produtos/' + str(product_id), method='DELETE')
+
+    def create_product(self, product):
+        return self.api_request('produtos/', params=product, method='POST')
 
     def read_refresh_token_from_file(self):
         if os.path.isfile(self.REFRESH_TOKEN_FILE):
